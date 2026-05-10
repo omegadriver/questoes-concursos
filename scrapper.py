@@ -3,6 +3,7 @@ from playwright.sync_api import sync_playwright
 from datetime import datetime
 import os
 import json
+import fitz  # PyMuPDF
 
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 url_base = "https://www.qconcursos.com/questoes-de-concursos/questoes"
@@ -18,8 +19,9 @@ metadata = {
         "termo_busca": q,
         "timestamp": timestamp,
         "url_base": url_base,
-        "total_paginas": 0
-    }
+        "total_paginas_web": 0
+    },
+    "paginas": []
 }
 
 with sync_playwright() as p:
@@ -43,21 +45,29 @@ with sync_playwright() as p:
             print("fim")
             break
 
-        pdf_path = f"{folder_name}/pagina_{nu_pagina}.pdf"
-        page.pdf(
-            path=pdf_path,
+        pdf_bytes = page.pdf(
             format="A4",
             print_background=True,
             margin={"top": "1cm", "bottom": "1cm", "left": "1cm", "right": "1cm"}
         )
-        print(f"Salvo: pagina_{nu_pagina}.pdf")
+
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        texto = "\n".join(
+            doc[i].get_text(sort=True)
+            for i in range(len(doc))
+        )
+        texto = texto.strip(" [www.qconcursos.com\n]")
+        doc.close()
+
+        metadata["paginas"].append({"pagina_web": nu_pagina, "texto": texto})
+        print(f"Extraído: pagina_{nu_pagina}")
 
         nu_pagina += 1
 
-    metadata["sessao"]["total_paginas"] = nu_pagina - 1
+    metadata["sessao"]["total_paginas_web"] = nu_pagina - 1
 
-    with open(f"{folder_name}/metadata.json", "w", encoding="utf-8") as f:
+    with open(f"{folder_name}/resultado.json", "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=2)
-    print(f"Metadata salvo: {folder_name}/metadata.json")
+    print(f"Salvo: {folder_name}/resultado.json")
 
     browser.close()
